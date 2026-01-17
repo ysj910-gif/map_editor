@@ -17,10 +17,18 @@ class MapLogic:
                 return i
         return None
     
-    @staticmethod # [수정] 정적 메서드 데코레이터 추가
+    @staticmethod
     def find_clicked_portal(portals, rx, ry, tolerance=10):
         """클릭한 위치 근처의 포탈 인덱스 반환"""
         for i, p in enumerate(portals):
             if math.dist((rx, ry), (p['in_x'], p['in_y'])) < tolerance:
+                return i
+        return None
+
+    @staticmethod
+    def find_clicked_spawn(spawns, rx, ry, tolerance=10):
+        """[신규] 클릭한 위치 근처의 스폰 포인트 인덱스 반환"""
+        for i, s in enumerate(spawns):
+            if math.dist((rx, ry), (s['x'], s['y'])) < tolerance:
                 return i
         return None

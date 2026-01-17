@@ -7,8 +7,7 @@ from PIL import Image, ImageTk
 
 from app_config import Config
 from map_logic import MapLogic
-from ui_widgets import PropertyEditor, PortalEditor
-
+from ui_widgets import PropertyEditor, PortalEditor, SpawnEditor
 
 class ImprovedMapEditor:
     def __init__(self):
@@ -20,8 +19,16 @@ class ImprovedMapEditor:
         self.mode = "PAN"
         self.platforms = []
         self.portals = [] 
+        self.spawns = []  # [신규] 스폰 포인트 리스트
         self.selected_platform_idx = None # [추가] 현재 선택된 발판 인덱스
         self.selected_portal_idx = None   # [추가] 현재 선택된 포탈 인덱스
+        self.selected_spawn_idx = None # [신규] 선택된 스폰 인덱스
+
+        # [신규] 시각화 토글 변수 (체크박스용)
+        self.show_platforms = tk.BooleanVar(value=True)
+        self.show_portals = tk.BooleanVar(value=True)
+        self.show_spawns = tk.BooleanVar(value=True)
+        self.show_paths = tk.BooleanVar(value=False)
 
         # 2. [중요] 지형 인식 설정값 변수를 UI 생성 전에 먼저 선언해야 합니다.
         self.thresh_val = tk.IntVar(value=150)
@@ -61,6 +68,7 @@ class ImprovedMapEditor:
         file_frame = tk.LabelFrame(self.sidebar, text="파일 관리")
         file_frame.pack(fill="x", padx=10, pady=5)
         tk.Button(file_frame, text="🖼 이미지 불러오기", command=self.load_new_image).pack(fill="x", padx=5, pady=5)
+        tk.Button(file_frame, text="📂 JSON 데이터 불러오기", command=self.load_map_data, bg="#fff9c4").pack(fill="x", padx=5, pady=2) # [신규]
 
         # 지형 인식 설정 섹션
         detect_frame = tk.LabelFrame(self.sidebar, text="🤖 지형 인식 설정")
@@ -71,6 +79,16 @@ class ImprovedMapEditor:
         
         tk.Label(detect_frame, text="Min Length (최소 길이)").pack(anchor="w", padx=5)
         tk.Scale(detect_frame, from_=0, to=100, orient="horizontal", variable=self.min_len_val).pack(fill="x", padx=5)
+
+        # 2. [신규] 시각화 설정 섹션
+        vis_frame = tk.LabelFrame(self.sidebar, text="👁 시각화 설정")
+        vis_frame.pack(fill="x", padx=10, pady=5)
+
+        tk.Checkbutton(vis_frame, text="발판 보기", variable=self.show_platforms, command=self.redraw).pack(anchor="w", padx=5)
+        tk.Checkbutton(vis_frame, text="포탈 보기", variable=self.show_portals, command=self.redraw).pack(anchor="w", padx=5)
+        tk.Checkbutton(vis_frame, text="스폰 보기", variable=self.show_spawns, command=self.redraw).pack(anchor="w", padx=5)
+        tk.Checkbutton(vis_frame, text="점프 경로 보기", variable=self.show_paths, command=self.redraw).pack(anchor="w", padx=5)
+
 
         # 자동 인식 버튼
         tk.Button(detect_frame, text="⚡ 전체 자동 감지", bg="#e1f5fe", command=self.auto_detect_platforms).pack(fill="x", padx=5, pady=2)
@@ -85,6 +103,8 @@ class ImprovedMapEditor:
         self.btn_draw.pack(fill="x", padx=5, pady=2)
         self.btn_portal = tk.Button(mode_frame, text="🌀 포탈 추가", command=lambda: self.set_mode("PORTAL"))
         self.btn_portal.pack(fill="x", padx=5, pady=2)
+        self.btn_spawn = tk.Button(mode_frame, text="👾 스폰 추가", command=lambda: self.set_mode("SPAWN")) # [신규]
+        self.btn_spawn.pack(fill="x", padx=5, pady=2)
         self.btn_pan = tk.Button(mode_frame, text="✋ 화면 이동 모드", bg=Config.COLOR_DRAW_ACTIVE, command=lambda: self.set_mode("PAN"))
         self.btn_pan.pack(fill="x", padx=5, pady=2)
 
@@ -141,6 +161,12 @@ class ImprovedMapEditor:
         self.btn_portal.config(bg=Config.COLOR_PORTAL_ACTIVE if mode == "PORTAL" else Config.COLOR_PORTAL_INACTIVE)
         self.btn_pan.config(bg=Config.COLOR_DRAW_ACTIVE if mode == "PAN" else Config.COLOR_DRAW_INACTIVE)
         self.btn_roi_detect.config(bg="#bbdefb" if mode == "ROI_DETECT" else "white")
+
+        # [수정]
+        self.selected_spawn_idx = None # 초기화 추가
+
+        self.btn_portal.config(bg=Config.COLOR_PORTAL_ACTIVE if mode == "PORTAL" else Config.COLOR_PORTAL_INACTIVE)
+        self.btn_spawn.config(bg="#d1c4e9" if mode == "SPAWN" else "white") # [신규] 보라색
         
         self.redraw()
 
@@ -167,7 +193,7 @@ class ImprovedMapEditor:
     def load_new_image(self):
         """실행 중 새로운 이미지를 불러오고 데이터를 초기화합니다."""
         # 기존 데이터가 있는 경우 확인 메시지
-        if self.platforms or self.portals:
+        if self.platforms or self.portals or self.spawns:
             if not messagebox.askyesno("데이터 초기화 확인", 
                                        "이미지를 새로 불러오면 현재 작성된 발판 및 포탈 데이터가 삭제됩니다. 계속하시겠습니까?"):
                 return
@@ -192,6 +218,7 @@ class ImprovedMapEditor:
             self.zoom_scale = 1.0
             self.platforms = []
             self.portals = []
+            self.spawns = []
             self.selected_platform_idx = None
             self.selected_portal_idx = None
             
@@ -201,22 +228,47 @@ class ImprovedMapEditor:
         except Exception as e:
             messagebox.showerror("오류", f"이미지를 불러오는 중 오류가 발생했습니다: {e}")
 
+    # [신규 함수]
+    def load_map_data(self):
+        """[신규] 기존 JSON 파일 불러오기"""
+        path = filedialog.askopenfilename(title="맵 데이터(JSON) 불러오기", filetypes=[("JSON files", "*.json")])
+        if not path: return
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            self.platforms = data.get('platforms', [])
+            self.portals = data.get('portals', [])
+            self.spawns = data.get('spawns', []) # 스폰 데이터 로드
+            self.redraw()
+            messagebox.showinfo("완료", f"데이터 로드 완료:\n발판 {len(self.platforms)}개\n포탈 {len(self.portals)}개\n스폰 {len(self.spawns)}개")
+        except Exception as e:
+            messagebox.showerror("오류", f"데이터 로드 실패: {e}")
+
     def redraw(self):
         if self.orig_img is None: return
         self.curr_img = self.orig_img.copy()
         
         # 발판 그리기
-        for i, p in enumerate(self.platforms):
-            color = (0, 0, 255) if i == self.selected_platform_idx else (0, 255, 0) # 선택된 발판은 빨간색
-            thickness = 3 if i == self.selected_platform_idx else 2
-            cv2.line(self.curr_img, (p['x_start'], p['y']), (p['x_end'], p['y']), color, thickness)
+        if self.show_paths.get() and self.show_platforms.get():
+            for i, p in enumerate(self.platforms):
+                color = (0, 0, 255) if i == self.selected_platform_idx else (0, 255, 0) # 선택된 발판은 빨간색
+                thickness = 3 if i == self.selected_platform_idx else 2
+                cv2.line(self.curr_img, (p['x_start'], p['y']), (p['x_end'], p['y']), color, thickness)
             
         # 포탈 그리기
-        for i, p in enumerate(self.portals):
-            color = (0, 0, 255) if i == self.selected_portal_idx else Config.COLOR_PORTAL_LINE
-            cv2.arrowedLine(self.curr_img, (p['in_x'], p['in_y']), (p['out_x'], p['out_y']), color, 2)
-            cv2.circle(self.curr_img, (p['in_x'], p['in_y']), 4, (255, 0, 0), -1)
-            
+        if self.show_portals.get():
+            for i, p in enumerate(self.portals):
+                color = (0, 0, 255) if i == self.selected_portal_idx else Config.COLOR_PORTAL_LINE
+                cv2.arrowedLine(self.curr_img, (p['in_x'], p['in_y']), (p['out_x'], p['out_y']), color, 2)
+                cv2.circle(self.curr_img, (p['in_x'], p['in_y']), 4, (255, 0, 0), -1)
+
+        # [수정] 스폰 포인트 그리기 추가
+        if self.show_spawns.get():
+            for i, s in enumerate(self.spawns):
+                color = (0, 0, 255) if i == self.selected_spawn_idx else (128, 0, 128) # 보라색
+                cv2.circle(self.curr_img, (s['x'], s['y']), 6, color, -1)
+                cv2.putText(self.curr_img, "SPAWN", (s['x']-20, s['y']-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
         self.temp_preview_img = self.curr_img.copy()
 
     def win_to_real(self, wx, wy):
@@ -242,22 +294,34 @@ class ImprovedMapEditor:
         rx, ry = self.win_to_real(event.x, event.y)
         if self.mode == "PAN":
             # 포탈 선택 확인
-            p_idx = MapLogic.find_clicked_portal(self.portals, rx, ry)
-            if p_idx is not None:
-                self.selected_portal_idx, self.selected_platform_idx = p_idx, None
-                PortalEditor(self.root, p_idx, self.portals[p_idx], self.img_h, self.img_w, 
-                             self.on_item_update, self.on_portal_delete)
-                self.redraw()
-                return
+            if self.show_portals.get(): # [추가된 조건]
+                p_idx = MapLogic.find_clicked_portal(self.portals, rx, ry)
+                if p_idx is not None:
+                    self.selected_portal_idx, self.selected_platform_idx = p_idx, None
+                    PortalEditor(self.root, p_idx, self.portals[p_idx], self.img_h, self.img_w, 
+                                 self.on_item_update, self.on_portal_delete)
+                    self.redraw()
+                    return
             
             # 발판 선택 확인
-            idx = MapLogic.find_clicked_platform(self.platforms, rx, ry)
-            if idx is not None:
-                self.selected_platform_idx, self.selected_portal_idx = idx, None
-                PropertyEditor(self.root, idx, self.platforms[idx], self.img_h, self.img_w, 
-                               self.on_item_update, self.on_platform_delete)
-                self.redraw()
-                return
+            if self.show_platforms.get(): # [추가된 조건]
+                idx = MapLogic.find_clicked_platform(self.platforms, rx, ry)
+                if idx is not None:
+                    self.selected_platform_idx, self.selected_portal_idx = idx, None
+                    PropertyEditor(self.root, idx, self.platforms[idx], self.img_h, self.img_w, 
+                                   self.on_item_update, self.on_platform_delete)
+                    self.redraw()
+                    return
+            
+            # 스폰 선택 확인
+            if self.show_spawns.get(): # [추가된 조건]
+                s_idx = MapLogic.find_clicked_spawn(self.spawns, rx, ry)
+                if s_idx is not None:
+                    self.selected_spawn_idx = s_idx
+                    self.selected_platform_idx = self.selected_portal_idx = None
+                    SpawnEditor(self.root, s_idx, self.spawns[s_idx], self.img_h, self.img_w, self.on_item_update, self.on_spawn_delete)
+                    self.redraw()
+                    return
             
             # 빈 공간 클릭 시 선택 해제 및 드래그 준비
             self.selected_platform_idx = self.selected_portal_idx = None
@@ -272,6 +336,9 @@ class ImprovedMapEditor:
             else:
                 self.portals.append({'in_x': self.portal_in_temp[0], 'in_y': self.portal_in_temp[1], 'out_x': rx, 'out_y': ry})
                 self.picking_exit = False
+                self.redraw()
+        elif self.mode == "SPAWN": # [신규] 스폰 추가
+                self.spawns.append({'x': rx, 'y': ry, 'desc': 'Spawn Point'})
                 self.redraw()
 
     def on_key_press(self, event):
@@ -301,14 +368,29 @@ class ImprovedMapEditor:
             elif key == "Left": p['in_x'] -= step
             elif key == "Right": p['in_x'] += step
 
+        elif self.selected_spawn_idx is not None: # [신규] 스폰 이동
+            s = self.spawns[self.selected_spawn_idx]
+            if key == "Up": s['y'] -= step
+            elif key == "Down": s['y'] += step
+            elif key == "Left": s['x'] -= step
+            elif key == "Right": s['x'] += step
+
         self.redraw()
 
     def on_item_update(self, idx, data):
         """[수정] 위젯에서 변경된 데이터 원본에 반영 및 실시간 리드로우"""
-        if "y" in data: # 발판 데이터인 경우
+        # 1. 스폰 데이터인지 확인 ('desc' 키가 있으면 스폰)
+        if "desc" in data:
+             self.spawns[idx].update(data)
+        
+        # 2. 발판 데이터인지 확인 ('y' 키가 있으면 발판)
+        elif "y" in data: 
             self.platforms[idx].update(data)
-        else: # 포탈 데이터인 경우
+            
+        # 3. 나머지는 포탈 데이터로 간주
+        else: 
             self.portals[idx].update(data)
+            
         self.redraw()
 
     # --- 이하 나머지 코드는 기존과 동일 (생략 가능하나 구조 유지를 위해 포함) ---
@@ -379,7 +461,7 @@ class ImprovedMapEditor:
         path = filedialog.asksaveasfilename(defaultextension=".json", initialfile="map_data.json")
         if path:
             with open(path, 'w', encoding='utf-8') as f:
-                json.dump({"platforms": self.platforms, "portals": self.portals}, f, indent=4, ensure_ascii=False)
+                json.dump({"platforms": self.platforms, "portals": self.portals, "spawns": self.spawns}, f, indent=4, ensure_ascii=False)
             messagebox.showinfo("완료", "데이터가 저장되었습니다.")
 
     def on_right_click(self, event):
@@ -391,6 +473,7 @@ class ImprovedMapEditor:
             self.portal_in_temp = (-1, -1)
         elif self.portals: self.portals.pop()
         elif self.platforms: self.platforms.pop()
+        elif self.spawns: self.spawns.pop()
         self.redraw()
 
     # main.py 내 ImprovedMapEditor 클래스에 추가할 메서드 예시
@@ -415,6 +498,9 @@ def auto_detect(self):
     self.platforms.extend(new_platforms) # 기존 데이터에 추가
     self.redraw() # 화면 갱신
     messagebox.showinfo("완료", f"{len(new_platforms)}개의 발판을 자동으로 찾았습니다.")
+
+
+    
 
 if __name__ == "__main__":
     ImprovedMapEditor()
