@@ -1,0 +1,62 @@
+{
+    "metadata": {
+        "name": "Asteria_1",
+        "desc": "아스테리아 북쪽외곽지역"
+    },
+    "platforms": [
+        {
+            "y": 110,
+            "x_start": 21,
+            "x_end": 46,
+            "description": "1"
+        },
+        {
+            "y": 122,
+            "x_start": 13,
+            "x_end": 54,
+            "description": "2"
+        },
+        {
+            "y": 133,
+            "x_start": 33,
+            "x_end": 47,
+            "description": "3"
+        },
+        {
+            "y": 143,
+            "x_start": 11,
+            "x_end": 175,
+            "description": "4"
+        },
+        {
+            "y": 130,
+            "x_start": 55,
+            "x_end": 74,
+            "description": "5"
+        },
+        {
+            "y": 129,
+            "x_start": 96,
+            "x_end": 136,
+            "description": "6"
+        },
+        {
+            "y": 131,
+            "x_start": 143,
+            "x_end": 162,
+            "description": "7"
+        },
+        {
+            "y": 117,
+            "x_start": 132,
+            "x_end": 172,
+            "description": "8"
+        },
+        {
+            "y": 106,
+            "x_start": 119,
+            "x_end": 144,
+            "description": "9"
+        }
+    ]
+}
